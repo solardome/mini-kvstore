@@ -1,0 +1,9 @@
+# Style close to Redis source formatting
+BasedOnStyle: LLVM
+IndentWidth: 4
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+ColumnLimit: 100
+SortIncludes: true
+PointerAlignment: Right

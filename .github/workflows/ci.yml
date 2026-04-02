@@ -1,0 +1,326 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs on same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # ═══════════════════════════════════════
+  # Job 1: Build & Unit Test
+  # ═══════════════════════════════════════
+  build-and-test:
+    name: "Build & Test (${{ matrix.compiler }})"
+    # Fix 2: pinned OS version instead of ubuntu-latest
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      # Fix 2: SHA-pinned first-party action (v4.2.2)
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          fi
+
+      - name: Configure
+        run: |
+          CC=${{ matrix.compiler }} cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER=${{ matrix.compiler }}
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure --timeout 30
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kvstore-${{ matrix.compiler }}
+          path: build/kvstore
+          retention-days: 5
+
+  # ═══════════════════════════════════════
+  # Job 2: Sanitizer tests (memory safety)
+  # ═══════════════════════════════════════
+  sanitizers:
+    name: "Sanitizers (${{ matrix.sanitizer.name }})"
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        sanitizer:
+          - { name: asan, flag: ENABLE_ASAN }
+          - { name: ubsan, flag: ENABLE_UBSAN }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+
+      - name: Build with ${{ matrix.sanitizer.name }}
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -D${{ matrix.sanitizer.flag }}=ON
+          cmake --build build --parallel $(nproc)
+
+      - name: Run tests under ${{ matrix.sanitizer.name }}
+        run: ctest --test-dir build --output-on-failure --timeout 60
+
+  # ═══════════════════════════════════════
+  # Job 3: Code Coverage
+  # Fix 3: new coverage job with lcov report
+  # ═══════════════════════════════════════
+  coverage:
+    name: "Coverage"
+    runs-on: ubuntu-24.04
+    needs: [build-and-test]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
+
+      - name: Build with coverage instrumentation
+        run: |
+          cmake -B build-cov \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_COVERAGE=ON
+          cmake --build build-cov --parallel $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build-cov --output-on-failure --timeout 30
+
+      - name: Generate coverage report
+        run: |
+          lcov --capture \
+               --directory build-cov \
+               --output-file coverage.info \
+               --ignore-errors mismatch
+          lcov --remove coverage.info '/usr/*' \
+               --output-file coverage.info \
+               --ignore-errors unused
+          lcov --list coverage.info
+          COVERAGE=$(lcov --summary coverage.info 2>&1 \
+            | grep "lines" | grep -o '[0-9]*\.[0-9]*%' | head -1 || echo "unknown")
+          echo "### Coverage: ${COVERAGE}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.info
+          retention-days: 14
+
+  # ═══════════════════════════════════════
+  # Job 4: Static Analysis & Linting
+  # Fix 4: clang-tidy and banned-functions are now blocking (no || true)
+  # ═══════════════════════════════════════
+  lint:
+    name: "Lint & Static Analysis"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential clang-tidy cppcheck
+
+      - name: Generate compile_commands.json
+        run: cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      # Fix 4: removed || true — clang-tidy warnings now fail the build
+      - name: Run clang-tidy
+        run: |
+          clang-tidy \
+            -p build \
+            --warnings-as-errors='*' \
+            src/*.c
+
+      - name: Run cppcheck
+        run: |
+          cppcheck \
+            --enable=warning,style,performance \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --suppress=constParameterPointer \
+            --inline-suppr \
+            -I src/ \
+            src/
+
+      # Fix 4: script now exits 1 on findings (hard gate)
+      - name: Check banned functions
+        run: bash scripts/check-banned-functions.sh src/
+
+  # ═══════════════════════════════════════
+  # Job 5: Fuzzing
+  # Fix 10: 30-second libFuzzer smoke test on every PR
+  # ═══════════════════════════════════════
+  fuzz:
+    name: "Fuzzing (30s)"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y cmake clang
+
+      - name: Build fuzz target
+        run: |
+          cmake -B build-fuzz \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang \
+            -DENABLE_FUZZING=ON
+          cmake --build build-fuzz --parallel $(nproc)
+
+      - name: Run fuzzer (30s smoke test)
+        run: |
+          build-fuzz/fuzz_kvstore \
+            -max_total_time=30 \
+            -max_len=256 \
+            -print_final_stats=1
+
+  # ═══════════════════════════════════════
+  # Job 6: Security Scanning
+  # ═══════════════════════════════════════
+  security:
+    name: "Security Scan"
+    runs-on: ubuntu-24.04
+    needs: [build-and-test]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Flawfinder
+        run: pip install flawfinder
+
+      - name: Run Flawfinder (SAST for C/C++)
+        run: |
+          flawfinder --minlevel=2 --sarif src/ > flawfinder-results.sarif || true
+          flawfinder --minlevel=1 --columns --context src/
+          echo ""
+          echo "=== Summary ==="
+          flawfinder --minlevel=2 --quiet src/
+          HITS=$(flawfinder --minlevel=3 --quiet src/ | grep -c "^" || true)
+          echo "High severity findings: $HITS"
+          if [ "$HITS" -gt 0 ]; then
+            echo "::warning::Found $HITS high-severity findings"
+          fi
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: flawfinder-results.sarif
+        continue-on-error: true # OK if not on a public repo
+
+  # ═══════════════════════════════════════
+  # Job 7: Docker Build + SBOM
+  # Fix 5: ubuntu:24.04 in Dockerfile
+  # Fix 6: Trivy CRITICAL findings now block the build (exit-code: 1)
+  # Fix 7: SBOM generated with anchore/sbom-action
+  # ═══════════════════════════════════════
+  docker:
+    name: "Docker Build"
+    runs-on: ubuntu-24.04
+    needs: [build-and-test]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mini-kvstore:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Fix 6: exit-code 1 means CRITICAL CVEs fail the job
+      - name: Run Trivy container scan
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: mini-kvstore:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      # Fix 7: generate SBOM in SPDX format
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: mini-kvstore:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 90
+
+  # ═══════════════════════════════════════
+  # Job 8: Release Gate
+  # Fix 8: creates a real GitHub Release with binary + SBOM attached
+  # Fix 8: passes binary path to release-gate.sh (not hardcoded)
+  # ═══════════════════════════════════════
+  release-gate:
+    name: "Release Gate"
+    runs-on: ubuntu-24.04
+    needs: [build-and-test, sanitizers, coverage, lint, fuzz, security, docker]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write # required to create GitHub Releases and tags
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Download GCC binary
+        uses: actions/download-artifact@v4
+        with:
+          name: kvstore-gcc
+          path: artifacts/
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+          path: artifacts/
+
+      - name: Release decision
+        id: gate
+        run: |
+          chmod +x scripts/release-gate.sh
+          ./scripts/release-gate.sh artifacts/kvstore
+
+      # Fix 8: real GitHub Release (not just a local tag echo)
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.gate.outputs.version }}-${{ github.sha }}"
+          name: "Release v${{ steps.gate.outputs.version }}"
+          generate_release_notes: true
+          files: |
+            artifacts/kvstore
+            artifacts/sbom.spdx.json

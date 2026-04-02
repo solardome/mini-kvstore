@@ -1,0 +1,18 @@
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  misc-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters,
+  -cert-err33-c,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+
+WarningsAsErrors: ""
+
+HeaderFilterRegex: "src/.*"
+
+CheckOptions:
+  - key: bugprone-suspicious-string-compare.WarnOnLogicalNotHere
+    value: true
