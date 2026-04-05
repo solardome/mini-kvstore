@@ -3,6 +3,7 @@
 Minimal in-memory key-value store written in C, built with CMake, and shipped with a production-grade CI/CD pipeline.
 
 [![CI Pipeline](https://github.com/solardome/mini-kvstore/actions/workflows/ci.yml/badge.svg)](https://github.com/solardome/mini-kvstore/actions/workflows/ci.yml)
+![Version](https://img.shields.io/github/v/release/solardome/mini-kvstore)
 
 ## What is this
 
