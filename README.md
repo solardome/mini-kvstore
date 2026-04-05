@@ -8,6 +8,10 @@ Minimal in-memory key-value store written in C, built with CMake, and shipped wi
 
 A simple hash table implementation (DJB2 hashing, open addressing) exposed through a clean C API: `set`, `get`, `del`, `count`. The project exists primarily as a reference implementation for building robust CI/CD pipelines around C projects using CMake and GitHub Actions.
 
+## Motivation
+
+Redis is written in C. C projects have unique CI/CD challenges - multiple compilers, sanitizers, memory safety tools, and build system complexity that Go or Java pipelines don't face. This project explores what a production-grade CI/CD pipeline looks like for a C codebase: layered static analysis, runtime sanitizers, fuzzing, container scanning, and a deterministic release gate - all integrated into GitHub Actions.
+
 ## Build
 
 ```bash
