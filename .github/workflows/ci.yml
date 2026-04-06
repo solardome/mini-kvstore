@@ -316,7 +316,7 @@ jobs:
           SECURITY_GATE_BUILD_CONTEXT_INTEGRITY: verified
         run: |
           # Download security-gate binary
-          curl -sSL https://github.com/solardome/security-gate/releases/download/v0.1.0/security-gate-linux-amd64 \
+          curl -sSL https://github.com/solardome/security-gate/releases/download/v0.3.0/security-gate_linux_amd64 \
           -o security-gate && chmod +x security-gate
 
           set +e
