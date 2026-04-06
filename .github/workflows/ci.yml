@@ -286,16 +286,17 @@ jobs:
 
       # Fix 6: exit-code 1 means CRITICAL CVEs fail the job
       - name: Run Trivy container scan
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7
         with:
           image-ref: mini-kvstore:${{ github.sha }}
           format: table
           exit-code: "1"
           severity: CRITICAL
           ignore-unfixed: true
+          trivy-version: v0.69.3
 
       - name: Run Trivy scan (JSON for gate)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7
         with:
           image-ref: mini-kvstore:${{ github.sha }}
           format: json
@@ -304,6 +305,7 @@ jobs:
           ignore-unfixed: true
           skip-db-update: false
           skip-java-db-update: false
+          trivy-version: v0.69.3
 
       - name: Upload Trivy JSON
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
