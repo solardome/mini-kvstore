@@ -347,6 +347,7 @@ jobs:
           ./security-gate \
             --scan trivy.json \
             --context-auto \
+            --policy .security-gate/policy.yaml \
             --out-json  gate-report.json \
             --out-html  gate-report.html \
             --checksums gate-checksums.sha256 \
