@@ -5,6 +5,12 @@ project(mini-kvstore
     DESCRIPTION "Minimal in-memory key-value store"
 )
 
+# ───── ccache ─────
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+endif()
+
 # ───── Compiler settings ─────
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

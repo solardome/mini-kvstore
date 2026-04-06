@@ -32,10 +32,17 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get install -y cmake build-essential ccache
           if [ "${{ matrix.compiler }}" = "clang" ]; then
             sudo apt-get install -y clang
           fi
+
+      - name: Cache ccache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ matrix.compiler }}-${{ hashFiles('src/**', 'tests/**') }}
+          restore-keys: ccache-${{ matrix.compiler }}-
 
       - name: Configure
         run: |
@@ -71,7 +78,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential ccache
+
+      - name: Cache ccache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/ccache
+          key: ccache-sanitizer-${{ matrix.sanitizer.name }}-${{ hashFiles('src/**', 'tests/**') }}
+          restore-keys: ccache-sanitizer-${{ matrix.sanitizer.name }}-
 
       - name: Build with ${{ matrix.sanitizer.name }}
         run: |
@@ -95,7 +109,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential ccache lcov
+
+      - name: Cache ccache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/ccache
+          key: ccache-coverage-${{ hashFiles('src/**', 'tests/**') }}
+          restore-keys: ccache-coverage-
 
       - name: Build with coverage instrumentation
         run: |
@@ -180,7 +201,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install Clang
-        run: sudo apt-get update && sudo apt-get install -y cmake clang
+        run: sudo apt-get update && sudo apt-get install -y cmake clang ccache
+
+      - name: Cache ccache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/ccache
+          key: ccache-fuzz-${{ hashFiles('src/**', 'tests/**') }}
+          restore-keys: ccache-fuzz-
 
       - name: Build fuzz target
         run: |
