@@ -24,6 +24,10 @@ RUN cmake -B out -DCMAKE_BUILD_TYPE=Release \
 # ── Stage 2: Runtime ──
 FROM ubuntu:24.04
 
+# Upgrade all packages to pick up security patches (e.g. CVE-2026-29111)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd -r kvstore && useradd -r -g kvstore kvstore
 
 COPY --from=builder /build/out/kvstore /usr/local/bin/kvstore
