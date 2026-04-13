@@ -26,7 +26,6 @@ jobs:
       matrix:
         compiler: [gcc, clang]
     steps:
-      # Fix 2: SHA-pinned first-party action (v4.2.2)
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Install dependencies
@@ -64,7 +63,7 @@ jobs:
           retention-days: 5
 
   # ═══════════════════════════════════════
-  # Job 2: Sanitizer tests (memory safety)
+  # Job 2: Sanitizer tests
   # ═══════════════════════════════════════
   sanitizers:
     name: "Sanitizers (${{ matrix.sanitizer.name }})"
@@ -99,7 +98,6 @@ jobs:
 
   # ═══════════════════════════════════════
   # Job 3: Code Coverage
-  # Fix 3: new coverage job with lcov report
   # ═══════════════════════════════════════
   coverage:
     name: "Coverage"
@@ -151,7 +149,6 @@ jobs:
 
   # ═══════════════════════════════════════
   # Job 4: Static Analysis & Linting
-  # Fix 4: clang-tidy and banned-functions are now blocking (no || true)
   # ═══════════════════════════════════════
   lint:
     name: "Lint & Static Analysis"
@@ -167,7 +164,6 @@ jobs:
       - name: Generate compile_commands.json
         run: cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-      # Fix 4: removed || true — clang-tidy warnings now fail the build
       - name: Run clang-tidy
         run: |
           clang-tidy \
@@ -186,13 +182,11 @@ jobs:
             -I src/ \
             src/
 
-      # Fix 4: script now exits 1 on findings (hard gate)
       - name: Check banned functions
         run: bash scripts/check-banned-functions.sh src/
 
   # ═══════════════════════════════════════
   # Job 5: Fuzzing
-  # Fix 10: 30-second libFuzzer smoke test on every PR
   # ═══════════════════════════════════════
   fuzz:
     name: "Fuzzing (30s)"
@@ -260,9 +254,6 @@ jobs:
 
   # ═══════════════════════════════════════
   # Job 7: Docker Build + SBOM
-  # Fix 5: ubuntu:24.04 in Dockerfile
-  # Fix 6: Trivy CRITICAL findings now block the build (exit-code: 1)
-  # Fix 7: SBOM generated with anchore/sbom-action
   # ═══════════════════════════════════════
   docker:
     name: "Docker Build"
@@ -284,7 +275,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Fix 6: exit-code 1 means CRITICAL CVEs fail the job
       - name: Run Trivy container scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 #v0.35.0
         with:
@@ -311,8 +301,7 @@ jobs:
           name: scan-trivy
           path: trivy.json
           retention-days: 5
-
-      # Fix 7: generate SBOM in SPDX format
+          
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -328,8 +317,6 @@ jobs:
           retention-days: 90
   # ═══════════════════════════════════════
   # Job 8: Release Gate
-  # Fix 8: creates a real GitHub Release with binary + SBOM attached
-  # Fix 8: passes binary path to release-gate.sh (not hardcoded)
   # ═══════════════════════════════════════
   gate:
     name: Security Gate
@@ -392,7 +379,7 @@ jobs:
     needs: [gate]
     if: github.ref == 'refs/heads/main'
     permissions:
-      contents: write # required to create GitHub Releases and tags
+      contents: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
@@ -414,7 +401,6 @@ jobs:
           chmod +x scripts/release-gate.sh
           ./scripts/release-gate.sh artifacts/kvstore
 
-      # Fix 8: real GitHub Release (not just a local tag echo)
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
